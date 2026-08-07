@@ -7,14 +7,14 @@ ORM; this repo migrates the same schema and every route to **Prisma**.
 
 ```bash
 cp .env.example .env   # then fill in DATABASE_URL and SESSION_SECRET
-pnpm install            # also runs `prisma generate` via postinstall
-pnpm run prisma:push     # create the schema in your database (or use prisma:migrate)
+yarn install            # also runs `prisma generate` via postinstall
+yarn prisma:push        # create the schema in your database (or use prisma:migrate)
 ```
 
 ## Develop
 
 ```bash
-pnpm run dev
+yarn dev
 ```
 
 Requires `DATABASE_URL`, `SESSION_SECRET`, and `PORT` to be set (see `.env.example`).
@@ -22,8 +22,8 @@ Requires `DATABASE_URL`, `SESSION_SECRET`, and `PORT` to be set (see `.env.examp
 ## Build
 
 ```bash
-pnpm run build   # esbuild bundle to dist/
-pnpm run start    # run the built server
+yarn build   # esbuild bundle to dist/
+yarn start   # run the built server
 ```
 
 ## Schema changes
@@ -31,9 +31,9 @@ pnpm run start    # run the built server
 Edit `prisma/schema.prisma`, then:
 
 ```bash
-pnpm run prisma:migrate   # dev: create + apply a migration
+yarn prisma:migrate   # dev: create + apply a migration
 # or
-pnpm run prisma:push       # prototyping: push schema without a migration
+yarn prisma:push      # prototyping: push schema without a migration
 ```
 
 ## API contract
