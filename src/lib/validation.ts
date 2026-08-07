@@ -113,6 +113,7 @@ export const ListPostsResponse = zod.object({
   "posts": zod.array(zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "excerpt": zod.string().nullable(),
   "coverImageUrl": zod.string().nullish(),
@@ -169,19 +170,21 @@ export const createPostBodyStatusDefault = `draft`;
 export const createPostBodyFeaturedDefault = false;
 
 export const CreatePostBody = zod.object({
-  "title": zod.string().min(1),
+  "title": zod.string().min(1).max(150),
+  "subtitle": zod.string().max(250).optional(),
   "content": zod.string(),
   "excerpt": zod.string().optional(),
   "coverImageUrl": zod.string().optional(),
   "status": zod.enum(['draft', 'published']).default(createPostBodyStatusDefault),
   "featured": zod.boolean().default(createPostBodyFeaturedDefault),
   "categoryId": zod.number().optional(),
-  "tags": zod.array(zod.string()).optional()
+  "tags": zod.array(zod.string()).max(5).optional()
 })
 
 export const CreatePostResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "excerpt": zod.string().nullable(),
   "coverImageUrl": zod.string().nullish(),
@@ -237,6 +240,7 @@ export const GetFeaturedPostsQueryParams = zod.object({
 export const GetFeaturedPostsResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "excerpt": zod.string().nullable(),
   "coverImageUrl": zod.string().nullish(),
@@ -293,6 +297,7 @@ export const GetTrendingPostsQueryParams = zod.object({
 export const GetTrendingPostsResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "excerpt": zod.string().nullable(),
   "coverImageUrl": zod.string().nullish(),
@@ -363,6 +368,7 @@ export const GetPostParams = zod.object({
 export const GetPostResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "content": zod.string(),
   "excerpt": zod.string().nullish(),
@@ -418,19 +424,34 @@ export const UpdatePostParams = zod.object({
 
 
 export const UpdatePostBody = zod.object({
-  "title": zod.string().min(1).optional(),
+  "title": zod.string().min(1).max(150).optional(),
+  "subtitle": zod.string().max(250).nullish(),
   "content": zod.string().optional(),
   "excerpt": zod.string().optional(),
   "coverImageUrl": zod.string().nullish(),
   "status": zod.enum(['draft', 'published']).optional(),
   "featured": zod.boolean().optional(),
   "categoryId": zod.number().nullish(),
-  "tags": zod.array(zod.string()).optional()
+  "tags": zod.array(zod.string()).max(5).optional()
+})
+
+// Hand-written (not orval-generated): silent partial update used by the
+// editor's debounced autosave. Deliberately has no minimums — a 1-character
+// draft must be able to save without tripping the publish-gate validation.
+export const AutosavePostBody = zod.object({
+  "title": zod.string().optional(),
+  "subtitle": zod.string().nullish(),
+  "content": zod.string().optional(),
+  "excerpt": zod.string().optional(),
+  "coverImageUrl": zod.string().nullish(),
+  "categoryId": zod.number().nullish(),
+  "tags": zod.array(zod.string()).max(5).optional()
 })
 
 export const UpdatePostResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "excerpt": zod.string().nullable(),
   "coverImageUrl": zod.string().nullish(),
@@ -496,6 +517,7 @@ export const GetPostBySlugParams = zod.object({
 export const GetPostBySlugResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "content": zod.string(),
   "excerpt": zod.string().nullish(),
@@ -582,6 +604,7 @@ export const GetRelatedPostsQueryParams = zod.object({
 export const GetRelatedPostsResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "excerpt": zod.string().nullable(),
   "coverImageUrl": zod.string().nullish(),
@@ -799,6 +822,7 @@ export const ListTagsResponse = zod.array(ListTagsResponseItem)
 export const GetMyBookmarksResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "excerpt": zod.string().nullable(),
   "coverImageUrl": zod.string().nullish(),
@@ -849,6 +873,7 @@ export const GetMyBookmarksResponse = zod.array(GetMyBookmarksResponseItem)
 export const GetMyPostsResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
+  "subtitle": zod.string().nullish(),
   "slug": zod.string(),
   "excerpt": zod.string().nullable(),
   "coverImageUrl": zod.string().nullish(),
