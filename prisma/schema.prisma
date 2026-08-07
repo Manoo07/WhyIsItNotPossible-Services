@@ -64,6 +64,7 @@ model Tag {
 model Post {
   id            Int        @id @default(autoincrement())
   title         String
+  subtitle      String?
   slug          String     @unique
   content       String     @default("")
   excerpt       String?
