@@ -575,7 +575,8 @@ export const GetRelatedPostsParams = zod.object({
 export const getRelatedPostsQueryLimitDefault = 4;
 
 export const GetRelatedPostsQueryParams = zod.object({
-  "limit": zod.coerce.number().default(getRelatedPostsQueryLimitDefault)
+  "limit": zod.coerce.number().default(getRelatedPostsQueryLimitDefault),
+  "page": zod.coerce.number().default(1)
 })
 
 export const GetRelatedPostsResponseItem = zod.object({
@@ -622,7 +623,13 @@ export const GetRelatedPostsResponseItem = zod.object({
   "isLiked": zod.boolean().optional(),
   "isBookmarked": zod.boolean().optional()
 })
-export const GetRelatedPostsResponse = zod.array(GetRelatedPostsResponseItem)
+export const GetRelatedPostsResponse = zod.object({
+  "posts": zod.array(GetRelatedPostsResponseItem),
+  "total": zod.number(),
+  "page": zod.number(),
+  "pageSize": zod.number(),
+  "totalPages": zod.number()
+})
 
 
 /**
