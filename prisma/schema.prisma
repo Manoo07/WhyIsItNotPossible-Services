@@ -18,24 +18,190 @@ enum PostStatus {
   published
 }
 
+enum NotificationType {
+  new_post
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  failed
+}
+
+// Account-standing state machine — deliberately separate from UserRole
+// (what a user can do) and from Post/Comment moderation state (what
+// happens to a specific piece of content). See docs/codebase-architecture-review.md
+// and FRS §30 ("do not combine these into one generic status field").
+enum UserAccountStatus {
+  active
+  restricted
+  suspended
+  deleted
+}
+
+enum ReportTargetType {
+  user
+  post
+  comment
+}
+
+enum ReportReason {
+  spam
+  harassment
+  hate
+  sexual
+  violence
+  fraud
+  copyright
+  illegal
+  impersonation
+  other
+}
+
+enum ReportPriority {
+  critical
+  high
+  medium
+  low
+}
+
+enum ReportStatus {
+  open
+  under_review
+  action_required
+  resolved
+  dismissed
+}
+
+enum AuditTargetType {
+  user
+  post
+  comment
+  report
+}
+
 model User {
-  id           Int      @id @default(autoincrement())
-  username     String   @unique
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  displayName  String?  @map("display_name")
-  role         UserRole @default(reader)
-  avatarUrl    String?  @map("avatar_url")
-  bio          String?
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @default(now()) @map("updated_at")
+  id                       Int               @id @default(autoincrement())
+  username                 String            @unique
+  email                    String            @unique
+  passwordHash             String            @map("password_hash")
+  displayName              String?           @map("display_name")
+  role                     UserRole          @default(reader)
+  avatarUrl                String?           @map("avatar_url")
+  bio                      String?
+  emailNotificationsGlobal Boolean           @default(true) @map("email_notifications_global")
+  status                   UserAccountStatus @default(active)
+  statusReason             String?           @map("status_reason")
+  suspendedUntil           DateTime?         @map("suspended_until")
+  // Bumped by admin "Force logout" and by suspension — requireAuth compares
+  // this against the value captured in the session at login, so revocation
+  // takes effect immediately without needing a shared session store.
+  sessionVersion           Int               @default(0) @map("session_version")
+  lastActiveAt             DateTime?         @map("last_active_at")
+  createdAt                DateTime          @default(now()) @map("created_at")
+  updatedAt                DateTime          @default(now()) @map("updated_at")
 
   posts     Post[]
   comments  Comment[]
   likes     Like[]
   bookmarks Bookmark[]
 
+  // Authors this user follows (rows where this user is the follower)
+  following AuthorFollow[] @relation("Follower")
+  // Followers of this user, when this user is an author (rows where this user is followed)
+  followers AuthorFollow[] @relation("Followed")
+
+  notificationsReceived Notification[] @relation("NotificationRecipient")
+  notificationsAuthored Notification[] @relation("NotificationAuthor")
+
+  reportsSubmitted Report[] @relation("Reporter")
+  reportsAssigned  Report[] @relation("ReportAssignee")
+  reportsResolved  Report[] @relation("ReportResolver")
+  auditLogs        AuditLog[] @relation("AuditAdmin")
+
   @@map("users")
+}
+
+model Report {
+  id           Int              @id @default(autoincrement())
+  reporterId   Int              @map("reporter_id")
+  targetType   ReportTargetType @map("target_type")
+  // Polymorphic reference (no FK) — targetType says which table targetId
+  // points into. Mirrors the FRS's own report shape, which treats this as
+  // an opaque id, not a foreign key into a single table.
+  targetId     Int              @map("target_id")
+  reason       ReportReason
+  description  String?
+  priority     ReportPriority   @default(medium)
+  status       ReportStatus     @default(open)
+  assignedToId Int?             @map("assigned_to_id")
+  resolvedById Int?             @map("resolved_by_id")
+  resolvedAt   DateTime?        @map("resolved_at")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @default(now()) @updatedAt @map("updated_at")
+
+  reporter   User  @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  assignedTo User? @relation("ReportAssignee", fields: [assignedToId], references: [id])
+  resolvedBy User? @relation("ReportResolver", fields: [resolvedById], references: [id])
+
+  @@index([status, priority])
+  @@index([targetType, targetId])
+  @@map("reports")
+}
+
+// Append-only from the admin app's perspective (FRS §19) — no update/delete
+// DAO functions are exposed for this model on purpose.
+model AuditLog {
+  id         Int             @id @default(autoincrement())
+  adminId    Int             @map("admin_id")
+  action     String
+  targetType AuditTargetType @map("target_type")
+  targetId   Int             @map("target_id")
+  reason     String?
+  note       String?
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  admin User @relation("AuditAdmin", fields: [adminId], references: [id])
+
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model AuthorFollow {
+  id                  Int      @id @default(autoincrement())
+  userId              Int      @map("user_id")
+  authorId            Int      @map("author_id")
+  notificationEnabled Boolean  @default(true) @map("notification_enabled")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user   User @relation("Follower", fields: [userId], references: [id], onDelete: Cascade)
+  author User @relation("Followed", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, authorId])
+  @@index([authorId, notificationEnabled])
+  @@map("author_followers")
+}
+
+model Notification {
+  id            Int                 @id @default(autoincrement())
+  userId        Int                 @map("user_id")
+  authorId      Int                 @map("author_id")
+  postId        Int                 @map("post_id")
+  type          NotificationType    @default(new_post)
+  status        NotificationStatus  @default(pending)
+  createdAt     DateTime            @default(now()) @map("created_at")
+  sentAt        DateTime?           @map("sent_at")
+  failureReason String?             @map("failure_reason")
+
+  user   User @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  author User @relation("NotificationAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId, type])
+  @@index([status])
+  @@map("notifications")
 }
 
 model Category {
@@ -78,13 +244,19 @@ model Post {
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @default(now()) @map("updated_at")
   publishedAt   DateTime?  @map("published_at")
+  // Moderation soft-delete — deliberately separate from `status` (draft vs.
+  // published is an authoring concern; removed is a moderation concern).
+  // See FRS §15/§30.
+  removedAt     DateTime?  @map("removed_at")
+  removalReason String?    @map("removal_reason")
 
-  author    User       @relation(fields: [authorId], references: [id])
-  category  Category?  @relation(fields: [categoryId], references: [id])
-  postTags  PostTag[]
-  likes     Like[]
-  bookmarks Bookmark[]
-  comments  Comment[]
+  author        User           @relation(fields: [authorId], references: [id])
+  category      Category?      @relation(fields: [categoryId], references: [id])
+  postTags      PostTag[]
+  likes         Like[]
+  bookmarks     Bookmark[]
+  comments      Comment[]
+  notifications Notification[]
 
   @@map("posts")
 }
@@ -123,12 +295,14 @@ model Bookmark {
 }
 
 model Comment {
-  id        Int      @id @default(autoincrement())
-  postId    Int      @map("post_id")
-  userId    Int      @map("user_id")
-  content   String
-  parentId  Int?     @map("parent_id")
-  createdAt DateTime @default(now()) @map("created_at")
+  id            Int       @id @default(autoincrement())
+  postId        Int       @map("post_id")
+  userId        Int       @map("user_id")
+  content       String
+  parentId      Int?      @map("parent_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  removedAt     DateTime? @map("removed_at")
+  removalReason String?   @map("removal_reason")
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
