@@ -11,8 +11,11 @@ export function toPublicUser(user: User) {
   return rest;
 }
 
-export async function getBookmarks(userId: number) {
-  const bookmarkRows = await bookmarkDao.findManyByUser(userId);
+export async function getBookmarks(userId: number, page: number, limit: number) {
+  const [bookmarkRows, total] = await Promise.all([
+    bookmarkDao.findManyByUser(userId, { skip: (page - 1) * limit, take: limit }),
+    bookmarkDao.countByUser(userId),
+  ]);
 
   const posts = await Promise.all(
     bookmarkRows.map(async ({ postId }) => {
@@ -20,12 +23,23 @@ export async function getBookmarks(userId: number) {
       return post ? enrichPost(post, userId) : null;
     }),
   );
-  return posts.filter(Boolean);
+
+  return { posts: posts.filter(Boolean), total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
 }
 
-export async function getMyPosts(userId: number) {
-  const posts = await postDao.findMany({ authorId: userId }, { createdAt: "desc" });
-  return Promise.all(posts.map((p) => enrichPost(p, userId)));
+export async function getMyPosts(userId: number, page: number, limit: number, status?: "draft" | "published") {
+  // The status filter matters once this is paginated, not just for
+  // convenience — MyDrafts.tsx needs "my draft posts" specifically, and
+  // without a server-side filter, drafts could be scrolled off the first
+  // page behind newer published posts instead of just being absent from a
+  // client-side filter over an unbounded list like before.
+  const where = { authorId: userId, ...(status ? { status } : {}) };
+  const [posts, total] = await Promise.all([
+    postDao.findMany(where, { createdAt: "desc" }, { skip: (page - 1) * limit, take: limit }),
+    postDao.count(where),
+  ]);
+  const enriched = await Promise.all(posts.map((p) => enrichPost(p, userId)));
+  return { posts: enriched, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
 }
 
 export async function updateProfile(userId: number, data: Prisma.UserUpdateInput) {

@@ -11,7 +11,13 @@ export async function register(req: Request, res: Response) {
   }
 
   const user = await authService.register(body.data);
-  req.session.user = { id: user.id, username: user.username, email: user.email, role: user.role };
+  req.session.user = {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    sessionVersion: user.sessionVersion,
+  };
   res.status(201).json({ user: toPublicUser(user) });
 }
 
@@ -22,7 +28,13 @@ export async function login(req: Request, res: Response) {
   }
 
   const user = await authService.login(body.data);
-  req.session.user = { id: user.id, username: user.username, email: user.email, role: user.role };
+  req.session.user = {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    sessionVersion: user.sessionVersion,
+  };
   res.json({ user: toPublicUser(user) });
 }
 

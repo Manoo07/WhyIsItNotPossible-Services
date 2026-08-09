@@ -960,3 +960,157 @@ export const GetUserProfileResponse = zod.object({
 })
 
 
+// Hand-written (not orval-generated): Author Follow & Post Notification
+// System. See prisma/schema.prisma (AuthorFollow, Notification models) and
+// src/routes/follow.routes.ts for the matching endpoints.
+
+/**
+ * @summary Follow an author
+ */
+export const FollowAuthorParams = zod.object({
+  "authorId": zod.coerce.number()
+})
+
+export const FollowAuthorResponse = zod.object({
+  "following": zod.boolean(),
+  "notificationEnabled": zod.boolean()
+})
+
+
+/**
+ * @summary Unfollow an author
+ */
+export const UnfollowAuthorParams = zod.object({
+  "authorId": zod.coerce.number()
+})
+
+export const UnfollowAuthorResponse = zod.object({
+  "following": zod.boolean()
+})
+
+
+/**
+ * @summary Get follow status for an author
+ */
+export const GetFollowStatusParams = zod.object({
+  "authorId": zod.coerce.number()
+})
+
+export const GetFollowStatusResponse = zod.object({
+  "following": zod.boolean(),
+  "notificationEnabled": zod.boolean()
+})
+
+
+/**
+ * @summary Enable/disable email notifications for a followed author
+ */
+export const UpdateNotificationPreferenceParams = zod.object({
+  "authorId": zod.coerce.number()
+})
+
+export const UpdateNotificationPreferenceBody = zod.object({
+  "enabled": zod.boolean()
+})
+
+export const UpdateNotificationPreferenceResponse = zod.object({
+  "following": zod.boolean(),
+  "notificationEnabled": zod.boolean()
+})
+
+
+/**
+ * @summary Get the current user's followed authors
+ */
+export const GetFollowedAuthorsResponseItem = zod.object({
+  "authorId": zod.number(),
+  "authorName": zod.string(),
+  "authorUsername": zod.string(),
+  "authorAvatarUrl": zod.string().nullish(),
+  "following": zod.boolean(),
+  "notificationEnabled": zod.boolean()
+})
+export const GetFollowedAuthorsResponse = zod.array(GetFollowedAuthorsResponseItem)
+
+
+/**
+ * @summary Get the current user's global email notification preference
+ */
+export const GetNotificationSettingsResponse = zod.object({
+  "emailNotificationsGlobal": zod.boolean()
+})
+
+
+/**
+ * @summary Update the current user's global email notification preference
+ */
+export const UpdateNotificationSettingsBody = zod.object({
+  "emailNotificationsGlobal": zod.boolean()
+})
+
+export const UpdateNotificationSettingsResponse = zod.object({
+  "emailNotificationsGlobal": zod.boolean()
+})
+
+
+// Hand-written (not orval-generated): Admin Content Operations Console.
+// See docs/admin-console-architecture-notes.md for the scope this was
+// deliberately narrowed to (no Media entity, owner role reused as
+// SUPER_ADMIN, Reports doubling as the Moderation Queue).
+
+/**
+ * @summary Update a user's account status (suspend/restrict/restore/delete)
+ */
+export const AdminUpdateUserStatusBody = zod.object({
+  "status": zod.enum(['active', 'restricted', 'suspended', 'deleted']),
+  "reason": zod.string().min(1, "A reason is required"),
+  "durationHours": zod.number().positive().nullish(),
+  "note": zod.string().optional()
+})
+
+/**
+ * @summary Force logout a user (invalidate their active session)
+ */
+export const AdminForceLogoutBody = zod.object({
+  "reason": zod.string().optional()
+})
+
+/**
+ * @summary Change a user's role (e.g. verify a reader as an author)
+ */
+export const AdminUpdateUserRoleBody = zod.object({
+  "role": zod.enum(['owner', 'author', 'reader']),
+  "reason": zod.string().min(1, "A reason is required")
+})
+
+/**
+ * @summary Remove or restore a post (moderation soft-delete)
+ */
+export const AdminUpdatePostStatusBody = zod.object({
+  "action": zod.enum(['remove', 'restore']),
+  "reason": zod.string().min(1, "A reason is required"),
+  "note": zod.string().optional()
+})
+
+/**
+ * @summary Submit a report against a user, post, or comment
+ */
+export const SubmitReportBody = zod.object({
+  "targetType": zod.enum(['user', 'post', 'comment']),
+  "targetId": zod.number(),
+  "reason": zod.enum(['spam', 'harassment', 'hate', 'sexual', 'violence', 'fraud', 'copyright', 'illegal', 'impersonation', 'other']),
+  "description": zod.string().max(2000).optional()
+})
+
+/**
+ * @summary Take a moderation decision on a report
+ */
+export const AdminDecideReportBody = zod.object({
+  "action": zod.enum(['assign', 'dismiss', 'escalate', 'remove_content', 'restore_content', 'restrict_user', 'suspend_user']),
+  "reason": zod.string().optional(),
+  "note": zod.string().optional(),
+  "assignToId": zod.number().optional(),
+  "durationHours": zod.number().positive().nullish()
+})
+
+

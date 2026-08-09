@@ -12,6 +12,10 @@ export function remove(postId: number, userId: number) {
   return prisma.bookmark.delete({ where: { postId_userId: { postId, userId } } });
 }
 
-export function findManyByUser(userId: number) {
-  return prisma.bookmark.findMany({ where: { userId } });
+export function findManyByUser(userId: number, opts: { skip: number; take: number }) {
+  return prisma.bookmark.findMany({ where: { userId }, orderBy: { postId: "desc" }, ...opts });
+}
+
+export function countByUser(userId: number) {
+  return prisma.bookmark.count({ where: { userId } });
 }

@@ -4,11 +4,16 @@ import { UpdateProfileBody } from "../lib/validation.js";
 import { BadRequestError } from "../lib/errors.js";
 
 export async function getBookmarks(req: Request, res: Response) {
-  res.json(await userService.getBookmarks(req.session.user!.id));
+  const page = Math.max(parseInt(String(req.query.page ?? "1")), 1);
+  const limit = Math.min(parseInt(String(req.query.limit ?? "20")), 50);
+  res.json(await userService.getBookmarks(req.session.user!.id, page, limit));
 }
 
 export async function getMyPosts(req: Request, res: Response) {
-  res.json(await userService.getMyPosts(req.session.user!.id));
+  const page = Math.max(parseInt(String(req.query.page ?? "1")), 1);
+  const limit = Math.min(parseInt(String(req.query.limit ?? "20")), 50);
+  const status = req.query.status === "draft" || req.query.status === "published" ? req.query.status : undefined;
+  res.json(await userService.getMyPosts(req.session.user!.id, page, limit, status));
 }
 
 export async function updateProfile(req: Request, res: Response) {

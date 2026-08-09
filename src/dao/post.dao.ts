@@ -4,9 +4,9 @@ import { prisma } from "../lib/prisma.js";
 export function findMany(
   where: Prisma.PostWhereInput,
   orderBy: Prisma.PostOrderByWithRelationInput,
-  take?: number,
+  opts?: { skip?: number; take?: number },
 ) {
-  return prisma.post.findMany({ where, orderBy, ...(take ? { take } : {}) });
+  return prisma.post.findMany({ where, orderBy, ...opts });
 }
 
 export function findById(id: number) {

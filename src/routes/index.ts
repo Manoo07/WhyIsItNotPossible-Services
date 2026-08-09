@@ -6,6 +6,9 @@ import categoryRouter from "./category.routes.js";
 import tagRouter from "./tag.routes.js";
 import userRouter from "./user.routes.js";
 import uploadRouter from "./upload.routes.js";
+import followRouter from "./follow.routes.js";
+import reportRouter from "./report.routes.js";
+import adminRouter from "./admin.routes.js";
 
 const router: IRouter = Router();
 
@@ -16,5 +19,8 @@ router.use(categoryRouter);
 router.use(tagRouter);
 router.use(userRouter);
 router.use(uploadRouter);
+router.use(followRouter);
+router.use(reportRouter);
+router.use(adminRouter);
 
 export default router;

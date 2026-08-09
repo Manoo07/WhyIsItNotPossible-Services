@@ -17,6 +17,14 @@ export function count(where?: Prisma.UserWhereInput) {
   return prisma.user.count({ where });
 }
 
+export function findMany(
+  where: Prisma.UserWhereInput,
+  orderBy: Prisma.UserOrderByWithRelationInput,
+  opts: { skip: number; take: number },
+) {
+  return prisma.user.findMany({ where, orderBy, ...opts });
+}
+
 export function create(data: Prisma.UserCreateInput) {
   return prisma.user.create({ data });
 }

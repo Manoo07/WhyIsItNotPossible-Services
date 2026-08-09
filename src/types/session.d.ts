@@ -5,6 +5,9 @@ export interface SessionUser {
   username: string;
   email: string;
   role: string;
+  // Compared against the DB row on every request so admin-triggered
+  // suspension/force-logout revokes an already-issued session immediately.
+  sessionVersion: number;
 }
 
 declare module "express-session" {

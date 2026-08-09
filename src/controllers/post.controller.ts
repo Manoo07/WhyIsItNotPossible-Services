@@ -1,5 +1,8 @@
 import type { Request, Response } from "express";
 import * as postService from "../services/post.service.js";
+import * as statsService from "../services/stats.service.js";
+import * as recommendationService from "../services/recommendation.service.js";
+import * as commentService from "../services/comment.service.js";
 import { CreatePostBody, UpdatePostBody, AutosavePostBody, CreateCommentBody } from "../lib/validation.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 
@@ -39,7 +42,7 @@ export async function trending(req: Request, res: Response) {
 }
 
 export async function stats(_req: Request, res: Response) {
-  res.json(await postService.getStats());
+  res.json(await statsService.getStats());
 }
 
 export async function getById(req: Request<{ id: string }>, res: Response) {
@@ -59,8 +62,7 @@ export async function create(req: Request, res: Response) {
   if (!body.success) {
     throw new BadRequestError();
   }
-  const authorId = req.session.user!.id;
-  res.status(201).json(await postService.create(authorId, body.data));
+  res.status(201).json(await postService.create(req.session.user!, body.data));
 }
 
 export async function update(req: Request<{ id: string }>, res: Response) {
@@ -101,12 +103,14 @@ export async function related(req: Request<{ id: string }>, res: Response) {
   const id = parseInt(req.params.id);
   const limit = Math.min(parseInt(String(req.query.limit ?? "8")), 24);
   const page = Math.max(parseInt(String(req.query.page ?? "1")), 1);
-  res.json(await postService.getRelated(id, page, limit, req.session?.user?.id));
+  res.json(await recommendationService.getRelated(id, page, limit, req.session?.user?.id));
 }
 
 export async function listComments(req: Request<{ id: string }>, res: Response) {
   const postId = parseInt(req.params.id);
-  res.json(await postService.listComments(postId));
+  const page = Math.max(parseInt(String(req.query.page ?? "1")), 1);
+  const limit = Math.min(parseInt(String(req.query.limit ?? "20")), 50);
+  res.json(await commentService.listComments(postId, page, limit));
 }
 
 export async function addComment(req: Request<{ id: string }>, res: Response) {
@@ -116,11 +120,11 @@ export async function addComment(req: Request<{ id: string }>, res: Response) {
   if (!body.success) {
     throw new BadRequestError();
   }
-  res.status(201).json(await postService.addComment(postId, userId, body.data));
+  res.status(201).json(await commentService.addComment(postId, userId, body.data));
 }
 
 export async function removeComment(req: Request<{ id: string }>, res: Response) {
   const id = parseInt(req.params.id);
-  await postService.removeComment(id, req.session.user!);
+  await commentService.removeComment(id, req.session.user!);
   res.json({ success: true });
 }

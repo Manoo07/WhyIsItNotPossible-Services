@@ -8,16 +8,26 @@ import * as likeDao from "../dao/like.dao.js";
 import * as bookmarkDao from "../dao/bookmark.dao.js";
 import * as commentDao from "../dao/comment.dao.js";
 import * as userDao from "../dao/user.dao.js";
-import { NotFoundError, ForbiddenError, BadRequestError } from "../lib/errors.js";
+import { NotFoundError, ForbiddenError, BadRequestError, RateLimitError } from "../lib/errors.js";
 import { slugify, estimateReadingTime } from "../lib/slugify.js";
 import { sanitizeHtml, stripHtml } from "../lib/sanitize.js";
-import type { CreatePostBody, UpdatePostBody, AutosavePostBody, CreateCommentBody } from "../lib/validation.js";
+import { logger } from "../lib/logger.js";
+import { isOwnerOrAuthorOf } from "../lib/policy.js";
+import { enqueuePostPublished } from "../queues/notification.queue.js";
+import type { CreatePostBody, UpdatePostBody, AutosavePostBody } from "../lib/validation.js";
 
 type CreatePostInput = z.infer<typeof CreatePostBody>;
 type UpdatePostInput = z.infer<typeof UpdatePostBody>;
 type AutosavePostInput = z.infer<typeof AutosavePostBody>;
-type CreateCommentInput = z.infer<typeof CreateCommentBody>;
 type CurrentUser = { id: number; role: string };
+
+// Cost controls for a service where every image lives in S3 and every
+// request is billed — see docs/admin-console-architecture-notes.md for the
+// "verified by admin before posting" gate these pair with (role itself is
+// the verification state; owners are exempt from both limits below since
+// they're the trusted operator, not a rate-limited public author).
+const MAX_IMAGES_PER_POST = 10;
+const DAILY_POST_LIMIT = 10;
 
 export async function enrichPost(post: Post, userId?: number) {
   const author = await userDao.findById(post.authorId);
@@ -81,11 +91,15 @@ function assertPublishable(data: { title: string; subtitle?: string | null; cont
     throw new BadRequestError("Content must include at least one paragraph");
   }
 
-  const hasMissingAlt = $("img")
-    .toArray()
-    .some((el) => !($(el).attr("alt") ?? "").trim());
+  const images = $("img").toArray();
+
+  const hasMissingAlt = images.some((el) => !($(el).attr("alt") ?? "").trim());
   if (hasMissingAlt) {
     throw new BadRequestError("Every image needs alt text before publishing");
+  }
+
+  if (images.length > MAX_IMAGES_PER_POST) {
+    throw new BadRequestError(`Up to ${MAX_IMAGES_PER_POST} images allowed per post (cover image not included)`);
   }
 
   if (data.tags.length === 0) {
@@ -93,6 +107,17 @@ function assertPublishable(data: { title: string; subtitle?: string | null; cont
   }
   if (data.tags.length > 5) {
     throw new BadRequestError("Up to 5 tags allowed");
+  }
+}
+
+// Enqueues the follower-notification fanout job. Fire-and-forget from the
+// caller's perspective: a queue/Redis outage must not break post
+// publication (FRS section 21), so this only logs on failure.
+async function notifyFollowersOfPublish(postId: number) {
+  try {
+    await enqueuePostPublished(postId);
+  } catch (err) {
+    logger.error({ postId, err }, "Failed to enqueue post-published notification fanout");
   }
 }
 
@@ -121,8 +146,13 @@ export interface ListPostsInput {
 
 export async function list(params: ListPostsInput) {
   const { page, limit, search, categorySlug, tagSlug, status, authorId, sort, userId } = params;
-  const offset = (page - 1) * limit;
   const conditions: Prisma.PostWhereInput[] = [];
+
+  // Removed by moderation — never visible on the consumer-facing list,
+  // independent of the draft/published filter above (a post can be
+  // published and removed at the same time; see FRS §30 on keeping these
+  // as separate state machines).
+  conditions.push({ removedAt: null });
 
   // Non-owners only see published posts unless they're the author
   if (status !== "draft" || userId === undefined) {
@@ -146,6 +176,14 @@ export async function list(params: ListPostsInput) {
     }
   }
 
+  // Pushed into the where-clause (a relation filter) rather than fetched
+  // and filtered in JS after the fact — that's what makes DB-level
+  // skip/take below give a correct page instead of a page computed before
+  // the tag filter was applied.
+  if (tagSlug) {
+    conditions.push({ postTags: { some: { tag: { slug: tagSlug } } } });
+  }
+
   const where: Prisma.PostWhereInput = conditions.length > 0 ? { AND: conditions } : {};
 
   const orderBy: Prisma.PostOrderByWithRelationInput =
@@ -155,21 +193,12 @@ export async function list(params: ListPostsInput) {
         ? { createdAt: "asc" }
         : { createdAt: "desc" };
 
-  let posts = await postDao.findMany(where, orderBy);
+  const [posts, total] = await Promise.all([
+    postDao.findMany(where, orderBy, { skip: (page - 1) * limit, take: limit }),
+    postDao.count(where),
+  ]);
 
-  // Filter by tag after query (simple approach)
-  if (tagSlug) {
-    const tag = await tagDao.findBySlug(tagSlug);
-    if (tag) {
-      const postTagRows = await tagDao.findPostTagsByTag(tag.id);
-      const postIds = new Set(postTagRows.map((r) => r.postId));
-      posts = posts.filter((p) => postIds.has(p.id));
-    }
-  }
-
-  const total = posts.length;
-  const paginated = posts.slice(offset, offset + limit);
-  const enriched = await Promise.all(paginated.map((p) => enrichPost(p, userId)));
+  const enriched = await Promise.all(posts.map((p) => enrichPost(p, userId)));
 
   return {
     posts: enriched,
@@ -181,48 +210,29 @@ export async function list(params: ListPostsInput) {
 }
 
 export async function getFeatured(limit: number, userId?: number) {
-  const posts = await postDao.findMany({ status: "published", featured: true }, { publishedAt: "desc" }, limit);
+  const posts = await postDao.findMany(
+    { status: "published", featured: true, removedAt: null },
+    { publishedAt: "desc" },
+    { take: limit },
+  );
 
   // Fall back to latest published if no featured
   const effectivePosts =
-    posts.length > 0 ? posts : await postDao.findMany({ status: "published" }, { publishedAt: "desc" }, limit);
+    posts.length > 0
+      ? posts
+      : await postDao.findMany({ status: "published", removedAt: null }, { publishedAt: "desc" }, { take: limit });
 
   return Promise.all(effectivePosts.map((p) => enrichPost(p, userId)));
 }
 
 export async function getTrending(limit: number, userId?: number) {
-  const posts = await postDao.findMany({ status: "published" }, { viewCount: "desc" }, limit);
+  const posts = await postDao.findMany({ status: "published", removedAt: null }, { viewCount: "desc" }, { take: limit });
   return Promise.all(posts.map((p) => enrichPost(p, userId)));
-}
-
-export async function getStats() {
-  const [totalPosts, viewsAgg, totalLikes, totalAuthors, categories] = await Promise.all([
-    postDao.count({ status: "published" }),
-    postDao.sumViewCount({ status: "published" }),
-    likeDao.countAll(),
-    userDao.count({ role: { in: ["owner", "author"] } }),
-    categoryDao.findMany(),
-  ]);
-
-  const categoryBreakdown = await Promise.all(
-    categories.map(async (c) => {
-      const count = await postDao.count({ categoryId: c.id, status: "published" });
-      return { name: c.name, slug: c.slug, count };
-    }),
-  );
-
-  return {
-    totalPosts,
-    totalViews: viewsAgg._sum.viewCount ?? 0,
-    totalLikes,
-    totalAuthors,
-    categoryBreakdown,
-  };
 }
 
 export async function getById(id: number, userId?: number) {
   const post = await postDao.findById(id);
-  if (!post) {
+  if (!post || post.removedAt) {
     throw new NotFoundError("Post not found");
   }
   return enrichPost(post, userId);
@@ -230,7 +240,7 @@ export async function getById(id: number, userId?: number) {
 
 export async function getBySlug(slug: string, userId?: number) {
   const post = await postDao.findBySlug(slug);
-  if (!post) {
+  if (!post || post.removedAt) {
     throw new NotFoundError("Post not found");
   }
 
@@ -240,7 +250,20 @@ export async function getBySlug(slug: string, userId?: number) {
   return enrichPost(updated, userId);
 }
 
-export async function create(authorId: number, data: CreatePostInput) {
+export async function create(currentUser: CurrentUser, data: CreatePostInput) {
+  const authorId = currentUser.id;
+
+  // Owners are the trusted operator running the site, not a rate-limited
+  // public author — everyone else (verified authors) gets a daily cap so a
+  // compromised or malicious account can't run up the S3 bill overnight.
+  if (currentUser.role !== "owner") {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const postsToday = await postDao.count({ authorId, createdAt: { gte: since } });
+    if (postsToday >= DAILY_POST_LIMIT) {
+      throw new RateLimitError(`You've reached your daily limit of ${DAILY_POST_LIMIT} posts. Try again tomorrow.`);
+    }
+  }
+
   const { title, subtitle, content: rawContent, excerpt, coverImageUrl, status, featured, categoryId, tags } = data;
   const content = sanitizeHtml(rawContent);
 
@@ -276,6 +299,10 @@ export async function create(authorId: number, data: CreatePostInput) {
     await syncPostTags(post.id, tags);
   }
 
+  if (post.status === "published") {
+    await notifyFollowersOfPublish(post.id);
+  }
+
   // TODO (Phase 8): snapshot a PostRevision here.
   return enrichPost(post, authorId);
 }
@@ -286,7 +313,7 @@ export async function update(id: number, currentUser: CurrentUser, data: UpdateP
     throw new NotFoundError("Post not found");
   }
 
-  const isOwnerOrAuthor = currentUser.role === "owner" || existing.authorId === currentUser.id;
+  const isOwnerOrAuthor = isOwnerOrAuthorOf(currentUser, existing);
   if (!isOwnerOrAuthor) {
     throw new ForbiddenError();
   }
@@ -312,7 +339,10 @@ export async function update(id: number, currentUser: CurrentUser, data: UpdateP
     updates.content = sanitizedContent;
     updates.readingTime = estimateReadingTime(sanitizedContent);
   }
-  if (updateData.status === "published" && existing.status !== "published") {
+  // The only "becomes publicly published" transition (FRS section 7) — not
+  // a draft being saved, not an edit to an already-published post.
+  const isNewlyPublished = updateData.status === "published" && existing.status !== "published";
+  if (isNewlyPublished) {
     updates.publishedAt = new Date();
   }
 
@@ -322,6 +352,10 @@ export async function update(id: number, currentUser: CurrentUser, data: UpdateP
   if (tags !== undefined) {
     await tagDao.deletePostTagsByPost(id);
     await syncPostTags(id, tags);
+  }
+
+  if (isNewlyPublished) {
+    await notifyFollowersOfPublish(id);
   }
 
   // TODO (Phase 8): snapshot a PostRevision here.
@@ -334,7 +368,7 @@ export async function autosave(id: number, currentUser: CurrentUser, data: Autos
     throw new NotFoundError("Post not found");
   }
 
-  const isOwnerOrAuthor = currentUser.role === "owner" || existing.authorId === currentUser.id;
+  const isOwnerOrAuthor = isOwnerOrAuthorOf(currentUser, existing);
   if (!isOwnerOrAuthor) {
     throw new ForbiddenError();
   }
@@ -362,7 +396,7 @@ export async function remove(id: number, currentUser: CurrentUser) {
   if (!existing) {
     throw new NotFoundError("Post not found");
   }
-  const isOwnerOrAuthor = currentUser.role === "owner" || existing.authorId === currentUser.id;
+  const isOwnerOrAuthor = isOwnerOrAuthorOf(currentUser, existing);
   if (!isOwnerOrAuthor) {
     throw new ForbiddenError();
   }
@@ -395,104 +429,3 @@ export async function toggleBookmark(postId: number, userId: number) {
   return { bookmarked: !existing };
 }
 
-// Ranks candidate posts by how many tags they share with the source post
-// (the strongest signal — two posts about the same specific things) plus a
-// same-category bonus and a small popularity tiebreaker, rather than just
-// "same category, most viewed" — a post could be in a different category
-// entirely and still be the more relevant read if it shares three tags.
-const RELATED_TAG_WEIGHT = 3;
-const RELATED_CATEGORY_WEIGHT = 2;
-
-// Scores every other published post rather than pre-filtering to a small
-// candidate pool — the pool is small enough (a personal blog, not a
-// platform-scale catalog) that this is cheap, and it means "View More"
-// pagination can page all the way through the entire catalog, ranked most-
-// to least relevant, instead of running out after one small pre-filtered
-// batch.
-export async function getRelated(id: number, page: number, pageSize: number, userId?: number) {
-  const post = await postDao.findById(id);
-  if (!post) {
-    return { posts: [], total: 0, page, pageSize, totalPages: 0 };
-  }
-
-  const ownTags = await tagDao.findPostTagsByPost(id);
-  const ownTagIds = ownTags.map((pt) => pt.tagId);
-
-  const sharedTagCounts = new Map<number, number>();
-  if (ownTagIds.length > 0) {
-    const rows = await tagDao.findPostTagsForTagIds(ownTagIds, id);
-    for (const { postId } of rows) {
-      sharedTagCounts.set(postId, (sharedTagCounts.get(postId) ?? 0) + 1);
-    }
-  }
-
-  const allOthers = await postDao.findMany({ status: "published", id: { not: id } }, { viewCount: "desc" });
-
-  const ranked = allOthers
-    .map((p) => {
-      const tagScore = (sharedTagCounts.get(p.id) ?? 0) * RELATED_TAG_WEIGHT;
-      const categoryScore = post.categoryId && p.categoryId === post.categoryId ? RELATED_CATEGORY_WEIGHT : 0;
-      const popularityScore = Math.log10(p.viewCount + 1) * 0.5;
-      return { post: p, score: tagScore + categoryScore + popularityScore };
-    })
-    .sort((a, b) => b.score - a.score)
-    .map((s) => s.post);
-
-  const total = ranked.length;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const pageSlice = ranked.slice((page - 1) * pageSize, page * pageSize);
-
-  return {
-    posts: await Promise.all(pageSlice.map((p) => enrichPost(p, userId))),
-    total,
-    page,
-    pageSize,
-    totalPages,
-  };
-}
-
-export async function listComments(postId: number) {
-  const comments = await commentDao.findManyByPost(postId);
-
-  return Promise.all(
-    comments.map(async (c) => {
-      const author = await userDao.findById(c.userId);
-      const { passwordHash: _ph, ...safeAuthor } = author ?? {};
-      return {
-        ...c,
-        createdAt: c.createdAt.toISOString(),
-        author: author ? safeAuthor : undefined,
-      };
-    }),
-  );
-}
-
-export async function addComment(postId: number, userId: number, data: CreateCommentInput) {
-  const comment = await commentDao.create({
-    postId,
-    userId,
-    content: data.content,
-    parentId: data.parentId ?? null,
-  });
-
-  const author = await userDao.findById(userId);
-  const { passwordHash: _ph, ...safeAuthor } = author ?? {};
-
-  return {
-    ...comment,
-    createdAt: comment.createdAt.toISOString(),
-    author: author ? safeAuthor : undefined,
-  };
-}
-
-export async function removeComment(id: number, currentUser: CurrentUser) {
-  const comment = await commentDao.findById(id);
-  if (!comment) {
-    throw new NotFoundError("Comment not found");
-  }
-  const isOwner = comment.userId === currentUser.id || currentUser.role === "owner";
-  if (!isOwner) {
-    throw new ForbiddenError();
-  }
-  await commentDao.remove(id);
-}
