@@ -1,8 +1,17 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 
-export function findMany() {
-  return prisma.tag.findMany();
+// Ordered by usage (post count) descending, name ascending as a tiebreak —
+// so "popular tags" is an actual ranking, not just insertion order truncated
+// on the frontend. Tags with zero posts sort last and are dropped when a
+// limit is given, since an unused tag isn't "popular."
+export function findMany({ limit }: { limit?: number } = {}) {
+  return prisma.tag.findMany({
+    where: limit !== undefined ? { postTags: { some: {} } } : undefined,
+    orderBy: [{ postTags: { _count: "desc" } }, { name: "asc" }],
+    take: limit,
+    include: { _count: { select: { postTags: true } } },
+  });
 }
 
 export function findBySlug(slug: string) {
@@ -11,6 +20,17 @@ export function findBySlug(slug: string) {
 
 export function create(data: Prisma.TagCreateInput) {
   return prisma.tag.create({ data });
+}
+
+export function update(id: number, data: Prisma.TagUpdateInput) {
+  return prisma.tag.update({ where: { id }, data });
+}
+
+// deleteMany (not delete) so removing an already-gone tag is a no-op
+// instead of throwing — matches category.dao.ts's remove. The PostTag rows
+// cascade automatically (see schema's onDelete: Cascade on PostTag.tag).
+export function remove(id: number) {
+  return prisma.tag.deleteMany({ where: { id } });
 }
 
 export function findPostTagsByPost(postId: number) {

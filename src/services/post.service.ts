@@ -162,7 +162,14 @@ export async function list(params: ListPostsInput) {
   }
 
   if (search) {
-    conditions.push({ title: { contains: search, mode: "insensitive" } });
+    conditions.push({
+      OR: [
+        { title: { contains: search, mode: "insensitive" } },
+        { subtitle: { contains: search, mode: "insensitive" } },
+        { excerpt: { contains: search, mode: "insensitive" } },
+        { content: { contains: search, mode: "insensitive" } },
+      ],
+    });
   }
 
   if (authorId) {

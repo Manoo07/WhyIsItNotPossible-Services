@@ -811,9 +811,86 @@ export const DeleteCategoryResponse = zod.object({
 export const ListTagsResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
-  "slug": zod.string()
+  "slug": zod.string(),
+  "postCount": zod.number().optional()
 })
 export const ListTagsResponse = zod.array(ListTagsResponseItem)
+
+
+/**
+ * @summary Create a tag (owner only)
+ */
+export const CreateTagBody = zod.object({
+  "name": zod.string(),
+  "slug": zod.string()
+})
+
+export const CreateTagResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "postCount": zod.number().optional()
+})
+
+
+/**
+ * @summary Update a tag
+ */
+export const UpdateTagParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateTagBody = zod.object({
+  "name": zod.string().optional(),
+  "slug": zod.string().optional()
+})
+
+export const UpdateTagResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "postCount": zod.number().optional()
+})
+
+
+/**
+ * @summary Delete a tag
+ */
+export const DeleteTagParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteTagResponse = zod.object({
+  "success": zod.boolean()
+})
+
+
+/**
+ * @summary List static pages (About, Contact, Privacy Policy, Terms of Service)
+ */
+export const StaticPageResponseItem = zod.object({
+  "id": zod.number(),
+  "slug": zod.string(),
+  "title": zod.string(),
+  "content": zod.string(),
+  "updatedAt": zod.string()
+})
+export const ListStaticPagesResponse = zod.array(StaticPageResponseItem)
+
+
+/**
+ * @summary Update a static page (owner only)
+ */
+export const UpdateStaticPageParams = zod.object({
+  "slug": zod.string()
+})
+
+export const UpdateStaticPageBody = zod.object({
+  "title": zod.string().optional(),
+  "content": zod.string().optional()
+})
+
+export const UpdateStaticPageResponse = StaticPageResponseItem
 
 
 /**

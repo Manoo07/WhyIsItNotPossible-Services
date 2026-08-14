@@ -227,6 +227,19 @@ model Tag {
   @@map("tags")
 }
 
+// Admin-editable content for the fixed set of public informational pages
+// (About, Contact, Privacy Policy, Terms of Service) — a slug-keyed lookup
+// table, same shape as Category, rather than one column/table per page.
+model StaticPage {
+  id        Int      @id @default(autoincrement())
+  slug      String   @unique
+  title     String
+  content   String   @default("")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("static_pages")
+}
+
 model Post {
   id            Int        @id @default(autoincrement())
   title         String
