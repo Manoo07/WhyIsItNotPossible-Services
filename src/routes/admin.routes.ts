@@ -4,6 +4,7 @@ import * as adminUserController from "../controllers/admin-user.controller.js";
 import * as adminPostController from "../controllers/admin-post.controller.js";
 import * as reportController from "../controllers/report.controller.js";
 import * as auditController from "../controllers/audit.controller.js";
+import * as adminAuthorApplicationController from "../controllers/admin-author-application.controller.js";
 import { requireAdmin } from "../middleware/auth.middleware.js";
 
 const router: IRouter = Router();
@@ -33,6 +34,10 @@ router.get("/admin/reports/:id", reportController.detail);
 router.get("/admin/reports/:id/related", reportController.listRelated);
 router.get("/admin/reports/:id/moderation-history", reportController.listModerationHistory);
 router.patch("/admin/reports/:id", reportController.decide);
+
+router.get("/admin/author-applications", adminAuthorApplicationController.list);
+router.get("/admin/author-applications/:id", adminAuthorApplicationController.detail);
+router.patch("/admin/author-applications/:id", adminAuthorApplicationController.decide);
 
 router.get("/admin/audit-logs", auditController.list);
 

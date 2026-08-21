@@ -46,6 +46,18 @@ export const authLimiter = rateLimit({
   // express-rate-limit's default keyGenerator already does this correctly.
 });
 
+// Tighter than authLimiter: every request here either sends a real email
+// (resend/forgot-password — spam/cost risk) or guesses a 6-digit code
+// (verify/reset — brute-force risk, on top of the per-code attempt cap in
+// otp.service.ts). Also IP-keyed, same reasoning as authLimiter.
+export const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: jsonHandler,
+});
+
 export const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 60,

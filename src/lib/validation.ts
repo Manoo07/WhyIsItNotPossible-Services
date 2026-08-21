@@ -68,6 +68,44 @@ export const LoginResponse = zod.object({
 })
 
 
+// Hand-written (not orval-generated — see the Follow/Notification and
+// Admin Console blocks below for the same convention): email OTP
+// verification and forgot-password, added once the app grew a mailer.
+
+const otpCodePattern = /^\d{6}$/;
+
+/**
+ * @summary Verify a registration email OTP
+ */
+export const VerifyEmailBody = zod.object({
+  "email": zod.string(),
+  "code": zod.string().regex(otpCodePattern, "Enter the 6-digit code")
+})
+
+/**
+ * @summary Resend a registration email OTP
+ */
+export const ResendOtpBody = zod.object({
+  "email": zod.string()
+})
+
+/**
+ * @summary Request a password-reset OTP
+ */
+export const ForgotPasswordBody = zod.object({
+  "email": zod.string()
+})
+
+/**
+ * @summary Reset password using an OTP
+ */
+export const ResetPasswordBody = zod.object({
+  "email": zod.string(),
+  "code": zod.string().regex(otpCodePattern, "Enter the 6-digit code"),
+  "newPassword": zod.string().min(registerBodyPasswordMin)
+})
+
+
 /**
  * @summary Log out
  */
@@ -1188,6 +1226,22 @@ export const AdminDecideReportBody = zod.object({
   "note": zod.string().optional(),
   "assignToId": zod.number().optional(),
   "durationHours": zod.number().positive().nullish()
+})
+
+/**
+ * @summary Apply to become an author
+ */
+export const SubmitAuthorApplicationBody = zod.object({
+  "pitch": zod.string().min(20, "Tell us a bit more — at least 20 characters").max(2000),
+  "portfolioUrl": zod.string().url("Enter a valid URL").optional().or(zod.literal(""))
+})
+
+/**
+ * @summary Approve or reject an author application
+ */
+export const AdminDecideAuthorApplicationBody = zod.object({
+  "decision": zod.enum(['approved', 'rejected']),
+  "reason": zod.string().min(1, "A reason is required")
 })
 
 

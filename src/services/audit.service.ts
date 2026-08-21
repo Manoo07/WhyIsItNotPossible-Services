@@ -1,6 +1,5 @@
+import type { AuditTargetType } from "@prisma/client";
 import * as auditLogDao from "../dao/audit-log.dao.js";
-
-export type AuditTargetType = "user" | "post" | "comment" | "report";
 
 export interface RecordActionInput {
   adminId: number;

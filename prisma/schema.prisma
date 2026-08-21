@@ -78,6 +78,7 @@ enum AuditTargetType {
   post
   comment
   report
+  author_application
 }
 
 model User {
@@ -97,6 +98,10 @@ model User {
   // this against the value captured in the session at login, so revocation
   // takes effect immediately without needing a shared session store.
   sessionVersion           Int               @default(0) @map("session_version")
+  // Null until the registration OTP is verified — login is blocked until
+  // then (see auth.service.ts). Existing users at migration time were
+  // backfilled to their createdAt so this doesn't lock anyone out.
+  emailVerifiedAt          DateTime?         @map("email_verified_at")
   lastActiveAt             DateTime?         @map("last_active_at")
   createdAt                DateTime          @default(now()) @map("created_at")
   updatedAt                DateTime          @default(now()) @map("updated_at")
@@ -105,6 +110,7 @@ model User {
   comments  Comment[]
   likes     Like[]
   bookmarks Bookmark[]
+  otps      Otp[]
 
   // Authors this user follows (rows where this user is the follower)
   following AuthorFollow[] @relation("Follower")
@@ -118,6 +124,9 @@ model User {
   reportsAssigned  Report[] @relation("ReportAssignee")
   reportsResolved  Report[] @relation("ReportResolver")
   auditLogs        AuditLog[] @relation("AuditAdmin")
+
+  authorApplications         AuthorApplication[] @relation("AuthorApplicationApplicant")
+  reviewedAuthorApplications AuthorApplication[] @relation("AuthorApplicationReviewer")
 
   @@map("users")
 }
@@ -166,6 +175,36 @@ model AuditLog {
   @@index([targetType, targetId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+enum AuthorApplicationStatus {
+  pending
+  approved
+  rejected
+}
+
+// A reader's self-serve request to become an author. Approving one reuses
+// adminUserService.updateRole (the same "verified by admin before posting"
+// path an admin can already trigger manually from the Users screen) rather
+// than flipping user.role directly here — one promotion code path, one
+// audit action name (SET_ROLE_AUTHOR), whether it was admin-initiated or
+// application-driven.
+model AuthorApplication {
+  id             Int                     @id @default(autoincrement())
+  applicantId    Int                     @map("applicant_id")
+  pitch          String
+  portfolioUrl   String?                 @map("portfolio_url")
+  status         AuthorApplicationStatus @default(pending)
+  reviewedById   Int?                    @map("reviewed_by_id")
+  decisionReason String?                 @map("decision_reason")
+  createdAt      DateTime                @default(now()) @map("created_at")
+  reviewedAt     DateTime?               @map("reviewed_at")
+
+  applicant  User  @relation("AuthorApplicationApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  reviewedBy User? @relation("AuthorApplicationReviewer", fields: [reviewedById], references: [id])
+
+  @@index([status])
+  @@map("author_applications")
 }
 
 model AuthorFollow {
@@ -238,6 +277,34 @@ model StaticPage {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("static_pages")
+}
+
+enum OtpPurpose {
+  email_verification
+  password_reset
+}
+
+// One table for both OTP flows (registration email verification and
+// forgot-password), distinguished by `purpose` — they're structurally
+// identical (a code tied to a user with an expiry and an attempt count),
+// so a second near-duplicate table wasn't worth it. `codeHash` is a plain
+// SHA-256 digest, not bcrypt: a 6-digit code only ever has 1,000,000
+// possibilities regardless of hash cost, so the real protection is
+// `expiresAt` + `attempts` + the route-level rate limiter, not a slow hash.
+model Otp {
+  id         Int        @id @default(autoincrement())
+  userId     Int        @map("user_id")
+  purpose    OtpPurpose
+  codeHash   String     @map("code_hash")
+  attempts   Int        @default(0)
+  expiresAt  DateTime   @map("expires_at")
+  consumedAt DateTime?  @map("consumed_at")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("otps")
 }
 
 model Post {

@@ -9,6 +9,7 @@ import userRouter from "./user.routes.js";
 import uploadRouter from "./upload.routes.js";
 import followRouter from "./follow.routes.js";
 import reportRouter from "./report.routes.js";
+import authorApplicationRouter from "./author-application.routes.js";
 import adminRouter from "./admin.routes.js";
 
 const router: IRouter = Router();
@@ -23,6 +24,7 @@ router.use(userRouter);
 router.use(uploadRouter);
 router.use(followRouter);
 router.use(reportRouter);
+router.use(authorApplicationRouter);
 router.use(adminRouter);
 
 export default router;

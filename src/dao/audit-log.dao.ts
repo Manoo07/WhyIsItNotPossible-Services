@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, AuditTargetType } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 
 // No update()/remove() exported on purpose — the audit log is append-only
@@ -6,7 +6,7 @@ import { prisma } from "../lib/prisma.js";
 export function create(data: {
   adminId: number;
   action: string;
-  targetType: "user" | "post" | "comment" | "report";
+  targetType: AuditTargetType;
   targetId: number;
   reason?: string | null;
   note?: string | null;
@@ -28,7 +28,7 @@ export function count(where: Prisma.AuditLogWhereInput) {
 }
 
 export function findByTarget(
-  targetType: "user" | "post" | "comment" | "report",
+  targetType: AuditTargetType,
   targetId: number,
   opts: { skip: number; take: number },
 ) {
@@ -40,6 +40,6 @@ export function findByTarget(
   });
 }
 
-export function countByTarget(targetType: "user" | "post" | "comment" | "report", targetId: number) {
+export function countByTarget(targetType: AuditTargetType, targetId: number) {
   return prisma.auditLog.count({ where: { targetType, targetId } });
 }
