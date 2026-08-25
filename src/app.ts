@@ -22,6 +22,14 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS ?? process.env.FRONTEND
 
 const app: Express = express();
 
+// Required behind the Nginx reverse proxy so req.ip / req.secure reflect
+// the real client (X-Forwarded-For) instead of the proxy's own address —
+// otherwise every request looks like it comes from one IP (breaks
+// apiLimiter/authLimiter/otpLimiter) and req.secure is always false.
+// `1` trusts exactly one hop, matching the single nginx container in front
+// of this app.
+app.set("trust proxy", 1);
+
 app.use(helmet());
 
 app.use(
@@ -58,13 +66,24 @@ app.use(
   }),
 );
 
+// Deliberately its own flag, not tied to NODE_ENV: this app runs in
+// production over plain HTTP for a while (deployed to an EC2 IP, no
+// domain/TLS yet), and a `secure` cookie is silently dropped by the
+// browser over HTTP — session/login would appear to work (200 response)
+// but never actually persist. Defaults to on for production so a deploy
+// that forgets to set this stays secure-by-default once TLS is in place;
+// set COOKIE_SECURE=false explicitly for the HTTP-only interim period.
+const cookieSecure = process.env.COOKIE_SECURE
+  ? process.env.COOKIE_SECURE === "true"
+  : process.env.NODE_ENV === "production";
+
 app.use(
   session({
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: cookieSecure,
       httpOnly: true,
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
