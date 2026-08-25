@@ -656,9 +656,11 @@ Humans may one day live on Mars, but not in the open. The air cannot be breathed
 ];
 
 async function main() {
-  const author = await prisma.user.findUnique({ where: { email: "phase0@test.local" } });
+  // See prisma/scrape/run.mjs for why this is a role lookup rather than a
+  // hardcoded email match.
+  const author = await prisma.user.findFirst({ where: { role: "owner" } });
   if (!author) {
-    throw new Error('Seed user "phase0@test.local" not found — log in/register that user first.');
+    throw new Error("No user with role \"owner\" found — create/promote one first.");
   }
 
   const category = await prisma.category.upsert({

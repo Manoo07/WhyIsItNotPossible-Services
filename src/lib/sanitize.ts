@@ -32,10 +32,13 @@ const ALLOWED_TAGS = [
   "figure",
   "figcaption",
   "div",
+  // First embed type: YouTube only, and only from its own hostnames (see
+  // allowedIframeHostnames below) — sanitize-html drops the whole tag, not
+  // just the src attribute, if the hostname doesn't match, so that option
+  // is the real enforcement point, not this tag allowlist entry.
+  "iframe",
 ];
 
-// No iframe/script here — embed providers get added incrementally,
-// scoped to exact allowlisted hostnames, as each embed type is built.
 const ALLOWED_ATTRIBUTES: sanitizeHtmlLib.IOptions["allowedAttributes"] = {
   a: ["href", "target", "rel"],
   img: ["src", "alt", "title", "width", "height"],
@@ -46,6 +49,7 @@ const ALLOWED_ATTRIBUTES: sanitizeHtmlLib.IOptions["allowedAttributes"] = {
   // enumerable set of semantic classes — see allowedClasses below.
   figure: ["class", "data-align"],
   div: ["class"],
+  iframe: ["src", "width", "height", "title", "allow", "allowfullscreen", "referrerpolicy", "frameborder"],
 };
 
 const ALLOWED_CLASSES: sanitizeHtmlLib.IOptions["allowedClasses"] = {
@@ -60,6 +64,10 @@ export function sanitizeHtml(dirty: string): string {
     allowedAttributes: ALLOWED_ATTRIBUTES,
     allowedClasses: ALLOWED_CLASSES,
     allowedSchemes: ["http", "https", "mailto"],
+    // Only these hosts may appear as an iframe src — everything else gets
+    // the whole iframe stripped, not just the offending attribute.
+    allowedIframeHostnames: ["www.youtube.com", "www.youtube-nocookie.com"],
+    allowIframeRelativeUrls: false,
   });
 }
 

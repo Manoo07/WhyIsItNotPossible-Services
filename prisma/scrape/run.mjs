@@ -2,9 +2,17 @@
 // each URL from whyisitnotpossible.com, and writes it in as a Post under the
 // given category — same DB-write shape as the existing seed-science.mjs.
 //
+// By default, a URL whose post already exists (matched by slug) is left
+// alone. Pass --update to instead re-fetch and overwrite that post's
+// content/subtitle/excerpt/cover/tags with what's live on the site now —
+// e.g. to backfill embeds/links into posts imported before sanitizeHtml()
+// allowed iframes. Title/slug/publishedAt/author/category are never
+// touched by --update, so URLs and ordering don't move.
+//
 // Usage:
 //   node prisma/scrape/run.mjs technology
 //   node prisma/scrape/run.mjs sports --limit=5
+//   node prisma/scrape/run.mjs sports --update
 import { PrismaClient } from "@prisma/client";
 import { fetchArticle } from "./parse.mjs";
 import { sanitizeHtml } from "./sanitize.mjs";
@@ -38,12 +46,18 @@ async function main() {
   }
   const limitArg = process.argv.find((a) => a.startsWith("--limit="));
   const limit = limitArg ? Number(limitArg.split("=")[1]) : Infinity;
+  const updateExisting = process.argv.includes("--update");
 
   const { categoryMeta, urls } = await import(`./manifests/${manifestName}.mjs`);
 
-  const author = await prisma.user.findUnique({ where: { email: "phase0@test.local" } });
+  // Looked up by role, not a specific email — the site's owner account is
+  // what these imports should be attributed to, and that account's email
+  // has already changed once (from the original phase0@test.local
+  // placeholder to a real address), which is exactly the kind of thing a
+  // hardcoded email match breaks on silently.
+  const author = await prisma.user.findFirst({ where: { role: "owner" } });
   if (!author) {
-    throw new Error('Seed user "phase0@test.local" not found — log in/register that user first.');
+    throw new Error("No user with role \"owner\" found — create/promote one first.");
   }
 
   const category = await prisma.category.upsert({
@@ -53,6 +67,7 @@ async function main() {
   });
 
   let created = 0;
+  let updated = 0;
   let skipped = 0;
   let failed = 0;
 
@@ -68,7 +83,8 @@ async function main() {
 
     const slug = article.slug || slugify(article.title);
     const existing = await prisma.post.findUnique({ where: { slug } });
-    if (existing) {
+
+    if (existing && !updateExisting) {
       skipped++;
       console.log(`- skip (already exists): ${article.title}`);
       continue;
@@ -77,23 +93,34 @@ async function main() {
     const content = sanitizeHtml(article.contentHtml);
     const readingTime = estimateReadingTime(content);
 
-    const post = await prisma.post.create({
-      data: {
-        title: article.title,
-        subtitle: article.subtitle,
-        slug,
-        content,
-        excerpt: article.subtitle,
-        coverImageUrl: article.coverImageUrl,
-        status: "published",
-        authorId: author.id,
-        categoryId: category.id,
-        readingTime,
-        publishedAt: article.publishedAt,
-        createdAt: article.publishedAt,
-        updatedAt: article.publishedAt,
-      },
-    });
+    const post = existing
+      ? await prisma.post.update({
+          where: { id: existing.id },
+          data: {
+            subtitle: article.subtitle,
+            content,
+            excerpt: article.subtitle,
+            coverImageUrl: article.coverImageUrl,
+            readingTime,
+          },
+        })
+      : await prisma.post.create({
+          data: {
+            title: article.title,
+            subtitle: article.subtitle,
+            slug,
+            content,
+            excerpt: article.subtitle,
+            coverImageUrl: article.coverImageUrl,
+            status: "published",
+            authorId: author.id,
+            categoryId: category.id,
+            readingTime,
+            publishedAt: article.publishedAt,
+            createdAt: article.publishedAt,
+            updatedAt: article.publishedAt,
+          },
+        });
 
     for (const tagName of article.tags) {
       const tagSlug = slugify(tagName);
@@ -109,11 +136,16 @@ async function main() {
       });
     }
 
-    created++;
-    console.log(`+ created: ${article.title} (${readingTime} min read, ${article.tags.length} tags)`);
+    if (existing) {
+      updated++;
+      console.log(`~ updated: ${article.title} (${readingTime} min read, ${article.tags.length} tags)`);
+    } else {
+      created++;
+      console.log(`+ created: ${article.title} (${readingTime} min read, ${article.tags.length} tags)`);
+    }
   }
 
-  console.log(`\nDone. Created ${created}, skipped ${skipped}, failed ${failed}.`);
+  console.log(`\nDone. Created ${created}, updated ${updated}, skipped ${skipped}, failed ${failed}.`);
 }
 
 main()

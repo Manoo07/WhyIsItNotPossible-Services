@@ -9,6 +9,7 @@ const ALLOWED_TAGS = [
   "a", "img", "strong", "em", "u", "s", "mark", "hr", "br",
   "table", "thead", "tbody", "tr", "th", "td",
   "figure", "figcaption", "div",
+  "iframe", // YouTube only — enforced via allowedIframeHostnames below
 ];
 
 const ALLOWED_ATTRIBUTES = {
@@ -17,6 +18,7 @@ const ALLOWED_ATTRIBUTES = {
   code: ["class"],
   figure: ["class", "data-align"],
   div: ["class"],
+  iframe: ["src", "width", "height", "title", "allow", "allowfullscreen", "referrerpolicy", "frameborder"],
 };
 
 const ALLOWED_CLASSES = {
@@ -31,5 +33,7 @@ export function sanitizeHtml(dirty) {
     allowedAttributes: ALLOWED_ATTRIBUTES,
     allowedClasses: ALLOWED_CLASSES,
     allowedSchemes: ["http", "https", "mailto"],
+    allowedIframeHostnames: ["www.youtube.com", "www.youtube-nocookie.com"],
+    allowIframeRelativeUrls: false,
   });
 }
