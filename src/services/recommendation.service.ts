@@ -33,7 +33,7 @@ export async function getRelated(id: number, page: number, pageSize: number, use
     }
   }
 
-  const allOthers = await postDao.findMany({ status: "published", removedAt: null, id: { not: id } }, { viewCount: "desc" });
+  const allOthers = await postDao.findManyList({ status: "published", removedAt: null, id: { not: id } }, { viewCount: "desc" });
 
   const ranked = allOthers
     .map((p) => {

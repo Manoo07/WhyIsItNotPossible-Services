@@ -19,7 +19,7 @@ export async function getBookmarks(userId: number, page: number, limit: number) 
 
   const posts = await Promise.all(
     bookmarkRows.map(async ({ postId }) => {
-      const post = await postDao.findById(postId);
+      const post = await postDao.findByIdList(postId);
       return post ? enrichPost(post, userId) : null;
     }),
   );
@@ -35,7 +35,7 @@ export async function getMyPosts(userId: number, page: number, limit: number, st
   // client-side filter over an unbounded list like before.
   const where = { authorId: userId, ...(status ? { status } : {}) };
   const [posts, total] = await Promise.all([
-    postDao.findMany(where, { createdAt: "desc" }, { skip: (page - 1) * limit, take: limit }),
+    postDao.findManyList(where, { createdAt: "desc" }, { skip: (page - 1) * limit, take: limit }),
     postDao.count(where),
   ]);
   const enriched = await Promise.all(posts.map((p) => enrichPost(p, userId)));

@@ -29,7 +29,21 @@ type CurrentUser = { id: number; role: string };
 const MAX_IMAGES_PER_POST = 10;
 const DAILY_POST_LIMIT = 10;
 
-export async function enrichPost(post: Post, userId?: number) {
+// Generic over Post (detail, has `content`) and PostListRow (list, doesn't)
+// so the same enrichment — author/category/tags/counts/like-bookmark state —
+// works for both without ever needing to touch `content` here; the return
+// type is inferred per call site, so a list caller's result naturally has
+// no `content` field rather than needing it stripped after the fact.
+export async function enrichPost<
+  T extends {
+    id: number;
+    authorId: number;
+    categoryId: number | null;
+    createdAt: Date;
+    updatedAt: Date;
+    publishedAt: Date | null;
+  },
+>(post: T, userId?: number) {
   const author = await userDao.findById(post.authorId);
   const category = post.categoryId ? await categoryDao.findById(post.categoryId) : null;
 
@@ -201,7 +215,7 @@ export async function list(params: ListPostsInput) {
         : { createdAt: "desc" };
 
   const [posts, total] = await Promise.all([
-    postDao.findMany(where, orderBy, { skip: (page - 1) * limit, take: limit }),
+    postDao.findManyList(where, orderBy, { skip: (page - 1) * limit, take: limit }),
     postDao.count(where),
   ]);
 
@@ -217,7 +231,7 @@ export async function list(params: ListPostsInput) {
 }
 
 export async function getFeatured(limit: number, userId?: number) {
-  const posts = await postDao.findMany(
+  const posts = await postDao.findManyList(
     { status: "published", featured: true, removedAt: null },
     { publishedAt: "desc" },
     { take: limit },
@@ -227,13 +241,13 @@ export async function getFeatured(limit: number, userId?: number) {
   const effectivePosts =
     posts.length > 0
       ? posts
-      : await postDao.findMany({ status: "published", removedAt: null }, { publishedAt: "desc" }, { take: limit });
+      : await postDao.findManyList({ status: "published", removedAt: null }, { publishedAt: "desc" }, { take: limit });
 
   return Promise.all(effectivePosts.map((p) => enrichPost(p, userId)));
 }
 
 export async function getTrending(limit: number, userId?: number) {
-  const posts = await postDao.findMany({ status: "published", removedAt: null }, { viewCount: "desc" }, { take: limit });
+  const posts = await postDao.findManyList({ status: "published", removedAt: null }, { viewCount: "desc" }, { take: limit });
   return Promise.all(posts.map((p) => enrichPost(p, userId)));
 }
 
