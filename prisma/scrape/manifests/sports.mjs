@@ -48,4 +48,5 @@ export const urls = [
   "https://whyisitnotpossible.com/unbreakable-olympic-athletics-records/",
   "https://whyisitnotpossible.com/unbreakable-womens-olympic-athletics-records/",
   "https://whyisitnotpossible.com/why-usain-bolts-958-seconds-may-never-be-broken/",
+  "https://whyisitnotpossible.com/tennis-player-dominate-every-surface/",
 ];
