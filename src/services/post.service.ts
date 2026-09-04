@@ -214,6 +214,52 @@ export async function list(params: ListPostsInput) {
         ? { createdAt: "asc" }
         : { createdAt: "desc" };
 
+  // A search term needs relevance ranking, not just the date/popularity
+  // ordering above — otherwise a post that only mentions the term once deep
+  // in its body can outrank the post that's actually *about* it, purely by
+  // being newer. Prisma's orderBy can't express "which field matched", so
+  // this fetches every match (no DB skip/take) and ranks title match above
+  // subtitle above excerpt above a content-only match, falling back to the
+  // requested sort within each tier — then paginates in JS. Fetching the
+  // full match set is the same "small enough catalog" tradeoff already made
+  // in recommendation.service.ts's getRelated; a personal blog's total
+  // search-result set is nowhere near where this would need a real
+  // full-text index.
+  if (search) {
+    const term = search.toLowerCase();
+    const relevanceTier = (p: { title: string; subtitle: string | null; excerpt: string | null }) => {
+      if (p.title.toLowerCase().includes(term)) return 0;
+      if (p.subtitle?.toLowerCase().includes(term)) return 1;
+      if (p.excerpt?.toLowerCase().includes(term)) return 2;
+      return 3; // matched only in content
+    };
+
+    const [allMatches, total] = await Promise.all([
+      postDao.findManyList(where, orderBy),
+      postDao.count(where),
+    ]);
+
+    const ranked = allMatches
+      .map((p, index) => ({ post: p, tier: relevanceTier(p), index }))
+      // Stable sort by tier only — `index` preserves the DB's own orderBy
+      // (date/popularity) as the tiebreaker within a tier, since Array.sort
+      // is stable but re-deriving that order from the objects themselves
+      // would need re-running the same comparison orderBy expresses.
+      .sort((a, b) => a.tier - b.tier || a.index - b.index)
+      .map((r) => r.post);
+
+    const pageSlice = ranked.slice((page - 1) * limit, page * limit);
+    const enriched = await Promise.all(pageSlice.map((p) => enrichPost(p, userId)));
+
+    return {
+      posts: enriched,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+
   const [posts, total] = await Promise.all([
     postDao.findManyList(where, orderBy, { skip: (page - 1) * limit, take: limit }),
     postDao.count(where),
