@@ -1,6 +1,22 @@
 name: whyisitnotpossible
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -15,15 +31,18 @@ services:
 
   # One-shot: applies pending Prisma migrations, then exits. api/worker both
   # wait on this completing successfully rather than each racing to migrate
-  # on their own startup. DATABASE_URL comes straight from .env (see
-  # DATABASE_URL comment there) — this deployment uses an existing external
-  # database, not a self-managed Postgres container.
+  # on their own startup.
   migrate:
     build:
       context: ..
       dockerfile: Dockerfile
     env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [internal]
 
   api:
@@ -33,6 +52,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
       PORT: 5000
       NODE_ENV: production
@@ -57,6 +77,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
     command: ["node", "--enable-source-maps", "dist/worker.mjs"]
@@ -111,4 +132,5 @@ networks:
   internal:
 
 volumes:
+  pgdata:
   redisdata:

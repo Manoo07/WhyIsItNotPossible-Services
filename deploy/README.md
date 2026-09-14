@@ -3,8 +3,7 @@
 Everything runs as Docker containers on one host: Nginx (terminates HTTPS on
 443, serves the built frontend, reverse-proxies `/api`), a `certbot`
 container that keeps the TLS cert renewed, the API server, the notification
-worker, and Redis. The database itself is external (not a container this
-compose file manages) — see `DATABASE_URL` in step 3.
+worker, Redis, and a self-managed Postgres container.
 
 ## 1. Point the domain at the instance
 
@@ -45,11 +44,8 @@ cd whyisitnotpossible-services/deploy
 Security group: allow inbound TCP **80 and 443** from `0.0.0.0/0` (80 is
 still needed — certbot's renewal challenge and the plain-HTTP→HTTPS redirect
 both use it), and 22 for SSH from your IP. Nothing else needs to be open —
-Redis/the API only listen on the internal Docker network, not the host. If
-the database is on a provider that restricts inbound connections by IP
-(RDS security groups, Neon/Supabase IP allowlists), make sure it allows
-this instance's IP separately — that's on the database provider's side,
-not this security group.
+Postgres/Redis/the API only listen on the internal Docker network, not the
+host.
 
 ## 3. Configure
 
@@ -63,10 +59,7 @@ Fill in `.env`:
   `whyisitnotpossible.com`).
 - `CERTBOT_EMAIL` — a real address; Let's Encrypt uses it for
   expiry/renewal notices.
-- `DATABASE_URL` — the existing database's connection string (see the
-  comment in `.env.example`). Confirm it's actually reachable from this
-  instance before continuing — a database that only allows connections
-  from your laptop/dev environment won't be reachable from EC2.
+- `POSTGRES_*` — pick a user/password/db name (avoid `@ : / #` in the password).
 - `SESSION_SECRET` — `openssl rand -base64 32`.
 - `COOKIE_SECURE=true` — this deployment is HTTPS-only, so this should
   stay `true` (see the comment in `.env.example`).
@@ -109,18 +102,18 @@ here on.
 ./deploy.sh
 ```
 
-This builds the images, brings up Redis, runs `prisma migrate deploy` once
-against `DATABASE_URL`, then starts the API, worker, Nginx, and the certbot
-renewal loop. First run also creates the Redis data volume. Re-running it
+This builds the images, brings up Postgres/Redis, runs `prisma migrate
+deploy` once, then starts the API, worker, Nginx, and the certbot renewal
+loop. First run also creates the Postgres/Redis data volumes. Re-running it
 after a `git pull` in either app repo picks up and redeploys the new code
 (rebuilds only what changed).
 
-If the database doesn't already have the baseline taxonomy/static-page
-content, run the seed scripts from `whyisitnotpossible-services/prisma/`
-(`seed-taxonomy.mjs` for categories/tags, `seed-static-pages.mjs` for
-About/Contact/Privacy/Terms) against it — the `api` container already has
-`DATABASE_URL` in its environment, so:
-`docker compose exec api node prisma/seed-taxonomy.mjs`.
+If you want a real dataset instead of an empty database, run the seed
+scripts from `whyisitnotpossible-services/prisma/` (`seed-taxonomy.mjs` for
+categories/tags, `seed-static-pages.mjs` for About/Contact/Privacy/Terms)
+against the running Postgres container — e.g.
+`docker compose exec -e DATABASE_URL=... api node prisma/seed-taxonomy.mjs`,
+substituting the same `DATABASE_URL` the `api` service uses.
 
 ## 6. Verify
 
@@ -142,7 +135,7 @@ docker compose logs -f api           # tail one service's logs
 docker compose logs -f certbot       # confirm renewal checks are happening
 docker compose restart api worker    # restart just the app, leave db/redis alone
 docker compose down                  # stop everything (data volumes persist)
-docker compose down -v               # stop AND wipe redis data — careful (the database is external and unaffected)
+docker compose down -v               # stop AND wipe postgres/redis data — careful
 ```
 
 To force a renewal manually (e.g. to sanity-check the pipeline works, well
