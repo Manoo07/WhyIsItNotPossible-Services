@@ -1,5 +1,10 @@
 node_modules
 dist
+# Deploy config lives inside this repo (see deploy/README.md) but has no
+# business being in the image build context — certbot's account/cert files
+# under deploy/certbot/ in particular have permissions the build can't
+# always read, which fails the whole build.
+deploy
 .env
 .env.*
 !.env.example
