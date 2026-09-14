@@ -122,7 +122,12 @@ async function main() {
           },
         });
 
-    for (const tagName of article.tags) {
+    for (const rawTagName of article.tags) {
+      // Some of the source theme's tag links render their visible text
+      // with a leading "#" (e.g. "#ChampionsLeague") — our own UI already
+      // prepends its own "#" when displaying tags, so a scraped name with
+      // one baked in shows up doubled ("##Champions League").
+      const tagName = rawTagName.replace(/^#+\s*/, "").trim();
       const tagSlug = slugify(tagName);
       const tag = await prisma.tag.upsert({
         where: { slug: tagSlug },
