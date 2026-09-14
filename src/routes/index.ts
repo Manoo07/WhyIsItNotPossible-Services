@@ -11,10 +11,12 @@ import followRouter from "./follow.routes.js";
 import reportRouter from "./report.routes.js";
 import authorApplicationRouter from "./author-application.routes.js";
 import adminRouter from "./admin.routes.js";
+import sitemapRouter from "./sitemap.routes.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(sitemapRouter);
 router.use(authRouter);
 router.use(postRouter);
 router.use(categoryRouter);

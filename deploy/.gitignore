@@ -1,0 +1,6 @@
+.env
+
+# Let's Encrypt account keys, private keys, and issued certs — created on
+# the host by init-certbot.sh / the certbot service, never something to
+# check in.
+certbot/
