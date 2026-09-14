@@ -7,6 +7,7 @@ import router from "./routes/index.js";
 import { logger } from "./lib/logger.js";
 import { notFoundHandler, errorHandler } from "./middleware/error.middleware.js";
 import { apiLimiter } from "./middleware/rate-limit.middleware.js";
+import { requestLogging } from "./middleware/request-logging.middleware.js";
 
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET must be set");
@@ -95,6 +96,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", apiLimiter);
+app.use("/api", requestLogging);
 app.use("/api", router);
 app.use("/api", notFoundHandler);
 app.use(errorHandler);
