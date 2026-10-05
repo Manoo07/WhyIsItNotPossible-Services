@@ -28,12 +28,24 @@ function userOrIpKey(req: Request): string {
   return userId ? `user-${userId}` : (req.ip ?? "unknown");
 }
 
+// Every request from the internet reaches this app through nginx, which
+// always sets X-Forwarded-For. A request without it came from inside the
+// Docker network (this port isn't published on the host) — in practice the
+// SSR server (whyisitnotpossible-ui's server.ts) fetching data to render a
+// page. All of those share the SSR container's one IP, so counting them
+// against a per-IP budget would exhaust it within a few dozen page views
+// and silently drop server-rendered pages back to empty loading states.
+function isInternalRequest(req: Request): boolean {
+  return !req.headers["x-forwarded-for"];
+}
+
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 300,
   standardHeaders: true,
   legacyHeaders: false,
   handler: jsonHandler,
+  skip: isInternalRequest,
 });
 
 export const authLimiter = rateLimit({

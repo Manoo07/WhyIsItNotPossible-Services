@@ -88,10 +88,45 @@ services:
         condition: service_healthy
     networks: [internal]
 
+  # Server-side rendering for the public pages (home, posts, categories,
+  # profiles, about/contact/privacy/terms) — nginx in `web` proxies those
+  # paths here and falls back to the plain client-rendered page if this
+  # container is down, so it isn't a hard dependency of `web`. Gets only
+  # the env it needs (not the whole .env — it has no use for DB/AWS/SMTP
+  # secrets).
+  ssr:
+    build:
+      context: ../../whyisitnotpossible-ui
+      dockerfile: Dockerfile
+      target: ssr
+      args:
+        PORT: "5173"
+        BASE_PATH: "/"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      SSR_PORT: 5174
+      API_BASE_URL: http://api:5000
+      # Absolute origin for canonical / og:url tags in the rendered HTML.
+      FRONTEND_URL: ${FRONTEND_URL}
+    healthcheck:
+      # A non-SSR path — answered from the built index.html without calling
+      # the API, so this checks the SSR process itself, not the backend.
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5174/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
   web:
     build:
       context: ../../whyisitnotpossible-ui
       dockerfile: Dockerfile
+      target: runtime
       args:
         PORT: "5173"
         BASE_PATH: "/"

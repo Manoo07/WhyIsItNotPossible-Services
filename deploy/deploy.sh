@@ -52,6 +52,16 @@ echo
 echo "==> Status"
 docker compose ps
 
+# Every build leaves GBs of build cache and the replaced images behind, and
+# this host's disk is small (that's what caused the ENOSPC build failure).
+# Build cache + dangling (superseded, untagged) images only — NEVER volumes:
+# postgres/redis data lives in the pgdata/redisdata volumes.
+echo
+echo "==> Reclaiming disk space (build cache + superseded images; volumes untouched)"
+docker builder prune -af >/dev/null
+docker image prune -f >/dev/null
+df -h / | tail -1
+
 echo
 # shellcheck disable=SC1091
 domain="$(set -a; source .env; set +a; echo "${DOMAIN:-}")"

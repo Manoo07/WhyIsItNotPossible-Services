@@ -127,11 +127,29 @@ substituting the same `DATABASE_URL` the `api` service uses.
   mismatch here is the classic "login looks like it works (200) but never
   actually persists" symptom.
 
+### Server-side rendering (`ssr` service)
+
+The public pages — `/`, `/blog/*`, `/category/*`, `/profile/*`, `/about`,
+`/contact`, `/privacy`, `/terms` — are rendered to real HTML by the `ssr`
+container (the frontend repo's `server.ts`) so search engines and link
+previews see actual content. nginx proxies those paths to it; everything
+else (`/admin`, `/login`, the editor, `/assets`) is still served as static
+files. If `ssr` is down, nginx falls back to the plain client-rendered page,
+so the site keeps working — it just isn't pre-rendered.
+
+To confirm it's working, check a post's raw HTML contains its title:
+
+```bash
+curl -s https://<your domain>/blog/<some-post-slug> | grep -o '<title>[^<]*</title>'
+docker compose logs --tail=50 ssr   # "SSR render failed" lines mean it fell back
+```
+
 ## Useful commands
 
 ```bash
 docker compose ps                    # what's running / healthy
 docker compose logs -f api           # tail one service's logs
+docker compose logs -f ssr           # server-rendering errors / fallbacks
 docker compose logs -f certbot       # confirm renewal checks are happening
 docker compose restart api worker    # restart just the app, leave db/redis alone
 docker compose down                  # stop everything (data volumes persist)
