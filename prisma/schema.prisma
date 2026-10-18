@@ -244,12 +244,15 @@ model Notification {
 }
 
 model Category {
-  id          Int     @id @default(autoincrement())
-  name        String
-  slug        String  @unique
-  description String?
-  icon        String?
-  color       String?
+  id            Int     @id @default(autoincrement())
+  name          String
+  slug          String  @unique
+  description   String?
+  icon          String?
+  color         String?
+  // Optional banner behind the category page's title. The admin UI crops
+  // uploads to 1920×640 (3:1) — see CategoryHero in the frontend.
+  coverImageUrl String? @map("cover_image_url")
 
   posts Post[]
 
