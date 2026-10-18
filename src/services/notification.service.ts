@@ -2,6 +2,7 @@ import * as followDao from "../dao/follow.dao.js";
 import * as notificationDao from "../dao/notification.dao.js";
 import * as postDao from "../dao/post.dao.js";
 import { sendMail } from "../lib/mailer.js";
+import { buildNewPostEmail, type RelatedPostSummary } from "../lib/new-post-email.js";
 import { logger } from "../lib/logger.js";
 import { getEmailQueue } from "../queues/notification.queue.js";
 
@@ -68,6 +69,32 @@ export async function processFanout(postId: number): Promise<void> {
 }
 
 // Runs in the email worker, one notification at a time.
+// "More from <category>" in the new-post email. One publish fans out to
+// every follower, so the same list would otherwise be queried once per
+// recipient; a short per-post cache turns that into roughly one query per
+// publish. Short-lived so a later post doesn't get a stale list.
+const RELATED_CACHE_TTL_MS = 10 * 60 * 1000;
+const relatedCache = new Map<number, { at: number; posts: RelatedPostSummary[] }>();
+
+async function relatedPostsFor(postId: number, categoryId: number | null): Promise<RelatedPostSummary[]> {
+  if (!categoryId) return [];
+  const cached = relatedCache.get(postId);
+  if (cached && Date.now() - cached.at < RELATED_CACHE_TTL_MS) return cached.posts;
+
+  const rows = await postDao.findManyList(
+    { status: "published", removedAt: null, categoryId, id: { not: postId } },
+    { publishedAt: "desc" },
+    { take: 3 },
+  );
+  const posts = rows.map((r) => ({ slug: r.slug, title: r.title, coverImageUrl: r.coverImageUrl, readingTime: r.readingTime }));
+
+  for (const [id, entry] of relatedCache) {
+    if (Date.now() - entry.at >= RELATED_CACHE_TTL_MS) relatedCache.delete(id);
+  }
+  relatedCache.set(postId, { at: Date.now(), posts });
+  return posts;
+}
+
 export async function processSendEmail(notificationId: number): Promise<void> {
   const notification = await notificationDao.findById(notificationId);
   if (!notification) {
@@ -83,30 +110,18 @@ export async function processSendEmail(notificationId: number): Promise<void> {
   }
 
   const authorName = notification.author.displayName || notification.author.username;
-  const postUrl = `${FRONTEND_URL}/blog/${notification.post.slug}`;
-  const preferencesUrl = `${FRONTEND_URL}/settings?tab=notifications`;
-
-  const subject = `${authorName} published a new post: ${notification.post.title}`;
-  const text = [
-    `${authorName} just published a new post.`,
-    "",
-    notification.post.title,
-    "",
-    `Read it: ${postUrl}`,
-    "",
-    `You are receiving this email because you follow ${authorName}.`,
-    `Manage notification preferences: ${preferencesUrl}`,
-  ].join("\n");
-  const html = `
-    <p>${authorName} just published a new post.</p>
-    <h2><a href="${postUrl}">${notification.post.title}</a></h2>
-    <p><a href="${postUrl}">Read Post</a></p>
-    <hr />
-    <p style="color:#666;font-size:12px;">
-      You are receiving this email because you follow ${authorName}.<br />
-      <a href="${preferencesUrl}">Manage notification preferences</a>
-    </p>
-  `;
+  // A related-posts lookup failing shouldn't cost the reader the email —
+  // the list is a bonus, so fall back to sending without it.
+  const related = await relatedPostsFor(notification.post.id, notification.post.categoryId).catch((err) => {
+    logger.warn({ notificationId, err }, "notification email: related posts lookup failed, sending without");
+    return [];
+  });
+  const { subject, html, text } = buildNewPostEmail({
+    author: { name: authorName, avatarUrl: notification.author.avatarUrl },
+    post: notification.post,
+    related,
+    siteUrl: FRONTEND_URL.replace(/\/+$/, ""),
+  });
 
   try {
     await sendMail({ to: notification.user.email, subject, html, text });

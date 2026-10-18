@@ -24,8 +24,22 @@ export function findById(id: number) {
     where: { id },
     include: {
       user: { select: { id: true, email: true } },
-      author: { select: { id: true, username: true, displayName: true } },
-      post: { select: { id: true, slug: true, title: true } },
+      author: { select: { id: true, username: true, displayName: true, avatarUrl: true } },
+      // Everything the new-post email shows (lib/email/new-post-email.ts).
+      post: {
+        select: {
+          id: true,
+          slug: true,
+          title: true,
+          subtitle: true,
+          excerpt: true,
+          coverImageUrl: true,
+          readingTime: true,
+          content: true,
+          categoryId: true,
+          category: { select: { name: true, slug: true, coverImageUrl: true } },
+        },
+      },
     },
   });
 }
